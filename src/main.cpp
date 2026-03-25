@@ -20,18 +20,36 @@ bool debouncedButtonState[NUM_BUTTONS];
 unsigned long lastDebounceTime[NUM_BUTTONS];
 const unsigned long DEBOUNCE_DELAY = 50;
 
+// Attract mode (idle playback)
+const unsigned long IDLE_TIMEOUT = 15UL * 60UL * 1000UL;  // 15 minutes in milliseconds
+const unsigned long TRACK_GAP = 5000;  // 5 seconds between tracks
+unsigned long lastButtonPressTime = 0;
+bool attractModeActive = false;
+bool waitingForTrackEnd = false;
+int currentAttractTrack = -1;
+unsigned long trackEndTime = 0;
+
+// Track pool for attract mode
+int trackPool[NUM_BUTTONS];
+int tracksRemaining = 0;
+
 // Function declarations
 void triggerTrack(int trackNum);
 void stopTrack(int trackNum);
 void setMasterVolume(int gain);
 bool isTrackPlaying(int trackNum);
 void removeTrackFromVoices(int trackNum);
+void handleAttractMode();
+void exitAttractMode();
+void refillTrackPool();
+int drawRandomTrack();
 
 void setup() {
   Serial.begin(115200);
   delay(1000);
   Serial.println("Wav Trigger with 6 buttons starting...");
   Serial.println("3-voice polyphony with voice stealing");
+  Serial.println("Attract mode after 15 minutes idle");
   
   // Setup buttons with internal pull-ups
   for (int i = 0; i < NUM_BUTTONS; i++) {
@@ -50,13 +68,21 @@ void setup() {
   delay(500);
   
   Serial.println("Setting volume...");
-  setMasterVolume(-10);
+  setMasterVolume(-20);
   delay(100);
+  
+  // Initialize random seed
+  randomSeed(analogRead(26));  // Use floating ADC pin for randomness
+  
+  lastButtonPressTime = millis();
   
   Serial.println("Ready! Press buttons...");
 }
 
 void loop() {
+  bool buttonPressed = false;
+  
+  // Check all buttons
   for (int i = 0; i < NUM_BUTTONS; i++) {
     int reading = digitalRead(BUTTON_PINS[i]);
     
@@ -74,6 +100,14 @@ void loop() {
         
         // Trigger on press
         if (debouncedButtonState[i] == LOW) {
+          buttonPressed = true;
+          lastButtonPressTime = millis();
+          
+          // Exit attract mode if active
+          if (attractModeActive) {
+            exitAttractMode();
+          }
+          
           int trackNum = TRACK_MAP[i];
           
           Serial.print("Button ");
@@ -111,6 +145,115 @@ void loop() {
         }
       }
     }
+  }
+  
+  // Handle attract mode
+  handleAttractMode();
+}
+
+void refillTrackPool() {
+  // Fill pool with all track indices
+  for (int i = 0; i < NUM_BUTTONS; i++) {
+    trackPool[i] = i;
+  }
+  tracksRemaining = NUM_BUTTONS;
+  Serial.println("Attract mode: refilled track pool");
+}
+
+int drawRandomTrack() {
+  // If pool is empty, exit attract mode and restart timer
+  if (tracksRemaining == 0) {
+    Serial.println("Attract mode: all tracks played, exiting");
+    attractModeActive = false;
+    waitingForTrackEnd = false;
+    lastButtonPressTime = millis();  // Restart 15 minute timer
+    return -1;  // Signal to not play anything
+  }
+  
+  // Pick a random index from remaining tracks
+  int randomIdx = random(tracksRemaining);
+  int trackIndex = trackPool[randomIdx];
+  
+  // Remove this track from pool by swapping with last element
+  trackPool[randomIdx] = trackPool[tracksRemaining - 1];
+  tracksRemaining--;
+  
+  return TRACK_MAP[trackIndex];
+}
+
+void handleAttractMode() {
+  unsigned long idleTime = millis() - lastButtonPressTime;
+  
+  // Check if we should enter attract mode
+  if (!attractModeActive && idleTime >= IDLE_TIMEOUT) {
+    Serial.println("=== ENTERING ATTRACT MODE ===");
+    attractModeActive = true;
+    waitingForTrackEnd = false;
+    currentAttractTrack = -1;
+    refillTrackPool();
+  }
+  
+  // If in attract mode, play tracks sequentially
+  if (attractModeActive) {
+    // If waiting for track to end, check if time is up
+    if (waitingForTrackEnd) {
+      if (millis() >= trackEndTime) {
+        waitingForTrackEnd = false;
+        Serial.println("Attract mode: track finished");
+      }
+    }
+    
+    // If not waiting, start a new track
+    if (!waitingForTrackEnd) {
+      // Pick a random track from pool
+      int trackNum = drawRandomTrack();
+      
+      // If -1, attract mode has ended
+      if (trackNum == -1) {
+        return;
+      }
+      
+      Serial.print("Attract mode: playing track ");
+      Serial.print(trackNum);
+      Serial.print(" (");
+      Serial.print(tracksRemaining);
+      Serial.println(" remaining in pool)");
+      
+      // Clear all voices and play this track solo
+      for (int i = 0; i < MAX_VOICES; i++) {
+        if (activeVoices[i] != 0) {
+          stopTrack(activeVoices[i]);
+          activeVoices[i] = 0;
+        }
+      }
+      
+      // Play the track
+      activeVoices[0] = trackNum;
+      triggerTrack(trackNum);
+      currentAttractTrack = trackNum;
+      waitingForTrackEnd = true;
+      
+      // Set end time (5 second gap)
+      trackEndTime = millis() + TRACK_GAP;
+    }
+  }
+}
+
+void exitAttractMode() {
+  Serial.println("=== EXITING ATTRACT MODE ===");
+  attractModeActive = false;
+  waitingForTrackEnd = false;
+  
+  // Stop current attract track
+  if (currentAttractTrack != -1) {
+    stopTrack(currentAttractTrack);
+    removeTrackFromVoices(currentAttractTrack);
+    currentAttractTrack = -1;
+  }
+  
+  // Clear all voices
+  for (int i = 0; i < MAX_VOICES; i++) {
+    activeVoices[i] = 0;
   }
 }
 
