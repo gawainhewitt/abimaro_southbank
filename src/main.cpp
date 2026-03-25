@@ -9,6 +9,11 @@ const int NUM_BUTTONS = 6;
 // Track mapping
 const int TRACK_MAP[] = {1, 2, 3, 4, 5, 6};
 
+// Polyphony settings
+const int MAX_VOICES = 3;
+int activeVoices[MAX_VOICES] = {0, 0, 0};  // Track which tracks are playing
+int voiceIndex = 0;  // Round-robin index for voice stealing
+
 // Debounce variables
 bool lastButtonState[NUM_BUTTONS];
 bool debouncedButtonState[NUM_BUTTONS];
@@ -17,12 +22,14 @@ const unsigned long DEBOUNCE_DELAY = 50;
 
 // Function declarations
 void triggerTrack(int trackNum);
+void stopTrack(int trackNum);
 void setMasterVolume(int gain);
 
 void setup() {
   Serial.begin(115200);
   delay(1000);
   Serial.println("Wav Trigger with 6 buttons starting...");
+  Serial.println("3-voice polyphony with voice stealing");
   
   // Setup buttons with internal pull-ups
   for (int i = 0; i < NUM_BUTTONS; i++) {
@@ -65,12 +72,31 @@ void loop() {
         
         // Trigger on press
         if (debouncedButtonState[i] == LOW) {
+          int trackNum = TRACK_MAP[i];
+          
           Serial.print("Button ");
           Serial.print(i + 1);
           Serial.print(" pressed - triggering track ");
-          Serial.println(TRACK_MAP[i]);
+          Serial.print(trackNum);
           
-          triggerTrack(TRACK_MAP[i]);
+          // Check if we need to steal a voice
+          if (activeVoices[voiceIndex] != 0) {
+            Serial.print(" (stealing voice ");
+            Serial.print(voiceIndex + 1);
+            Serial.print(", stopping track ");
+            Serial.print(activeVoices[voiceIndex]);
+            Serial.print(")");
+            stopTrack(activeVoices[voiceIndex]);
+          }
+          
+          Serial.println();
+          
+          // Assign this track to the current voice slot
+          activeVoices[voiceIndex] = trackNum;
+          triggerTrack(trackNum);
+          
+          // Move to next voice slot (round-robin)
+          voiceIndex = (voiceIndex + 1) % MAX_VOICES;
         }
       }
     }
@@ -83,7 +109,19 @@ void triggerTrack(int trackNum) {
   WavSerial.write(0xAA);           // SOM2
   WavSerial.write(0x08);           // Message length (8 bytes total)
   WavSerial.write(0x03);           // Command: CONTROL_TRACK
-  WavSerial.write(0x01);           // Play code: 0x01 = PLAY_POLY (or 0x00 for PLAY_SOLO)
+  WavSerial.write(0x01);           // Play code: 0x01 = PLAY_POLY
+  WavSerial.write((byte)trackNum); // Track number low byte
+  WavSerial.write((byte)(trackNum >> 8)); // Track number high byte
+  WavSerial.write(0x55);           // EOM
+}
+
+void stopTrack(int trackNum) {
+  // Stop track command: same format but with STOP code (0x04)
+  WavSerial.write(0xF0);           // SOM1
+  WavSerial.write(0xAA);           // SOM2
+  WavSerial.write(0x08);           // Message length (8 bytes total)
+  WavSerial.write(0x03);           // Command: CONTROL_TRACK
+  WavSerial.write(0x04);           // Play code: 0x04 = STOP
   WavSerial.write((byte)trackNum); // Track number low byte
   WavSerial.write((byte)(trackNum >> 8)); // Track number high byte
   WavSerial.write(0x55);           // EOM
