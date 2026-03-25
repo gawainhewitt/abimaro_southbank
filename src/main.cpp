@@ -24,6 +24,8 @@ const unsigned long DEBOUNCE_DELAY = 50;
 void triggerTrack(int trackNum);
 void stopTrack(int trackNum);
 void setMasterVolume(int gain);
+bool isTrackPlaying(int trackNum);
+void removeTrackFromVoices(int trackNum);
 
 void setup() {
   Serial.begin(115200);
@@ -76,20 +78,29 @@ void loop() {
           
           Serial.print("Button ");
           Serial.print(i + 1);
-          Serial.print(" pressed - triggering track ");
+          Serial.print(" pressed - track ");
           Serial.print(trackNum);
           
-          // Check if we need to steal a voice
-          if (activeVoices[voiceIndex] != 0) {
-            Serial.print(" (stealing voice ");
-            Serial.print(voiceIndex + 1);
-            Serial.print(", stopping track ");
-            Serial.print(activeVoices[voiceIndex]);
-            Serial.print(")");
-            stopTrack(activeVoices[voiceIndex]);
+          // Check if this track is already playing
+          if (isTrackPlaying(trackNum)) {
+            Serial.println(" already playing, retriggering");
+            // Stop the existing instance
+            stopTrack(trackNum);
+            // Remove it from voice tracking
+            removeTrackFromVoices(trackNum);
+          } else {
+            Serial.println();
           }
           
-          Serial.println();
+          // Now find a slot for the new track
+          // Check if we need to steal a voice
+          if (activeVoices[voiceIndex] != 0) {
+            Serial.print("  Stealing voice ");
+            Serial.print(voiceIndex + 1);
+            Serial.print(", stopping track ");
+            Serial.println(activeVoices[voiceIndex]);
+            stopTrack(activeVoices[voiceIndex]);
+          }
           
           // Assign this track to the current voice slot
           activeVoices[voiceIndex] = trackNum;
@@ -99,6 +110,24 @@ void loop() {
           voiceIndex = (voiceIndex + 1) % MAX_VOICES;
         }
       }
+    }
+  }
+}
+
+bool isTrackPlaying(int trackNum) {
+  for (int i = 0; i < MAX_VOICES; i++) {
+    if (activeVoices[i] == trackNum) {
+      return true;
+    }
+  }
+  return false;
+}
+
+void removeTrackFromVoices(int trackNum) {
+  for (int i = 0; i < MAX_VOICES; i++) {
+    if (activeVoices[i] == trackNum) {
+      activeVoices[i] = 0;  // Clear this slot
+      return;
     }
   }
 }
