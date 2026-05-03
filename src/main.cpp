@@ -1,6 +1,9 @@
 #include <Arduino.h>
+#include <RTClib.h>
 
 #define WavSerial Serial1
+
+RTC_DS3231 rtc;
 
 // Button pins - each adjacent to a GND pin
 const int BUTTON_PINS[] = {2, 6, 10, 13, 17, 21};
@@ -47,6 +50,20 @@ int drawRandomTrack();
 void setup() {
   Serial.begin(115200);
   delay(1000);
+
+  if (!rtc.begin()) {
+    Serial.println("RTC not found!");
+    while (1);
+  }
+
+  // rtc.adjust(DateTime(F(__DATE__), F(__TIME__))); // flash once to set time. If you leave this in it will reset time every time it boots
+
+  DateTime now = rtc.now();
+  Serial.print("RTC time: ");
+  Serial.print(now.hour());
+  Serial.print(":");
+  Serial.println(now.minute());
+
   Serial.println("Wav Trigger with 6 buttons starting...");
   Serial.println("3-voice polyphony with voice stealing");
   Serial.println("Attract mode after 15 minutes idle");
@@ -114,6 +131,12 @@ void loop() {
           Serial.print(i + 1);
           Serial.print(" pressed - track ");
           Serial.print(trackNum);
+
+          DateTime now = rtc.now();
+          Serial.print(" | RTC time: ");
+          Serial.print(now.hour());
+          Serial.print(":");
+          Serial.println(now.minute());
           
           // Check if this track is already playing
           if (isTrackPlaying(trackNum)) {
