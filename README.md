@@ -2,12 +2,16 @@
 
 ## Audio File Preparation
 
-WAV files exported from Logic Pro (and some other DAWs) contain metadata chunks that can cause issues with the Wav Trigger. Use this ffmpeg command to strip metadata and ensure clean 16-bit, 44.1kHz stereo WAV files:
+WAV files exported from Logic Pro (and some other DAWs) contain metadata chunks that can cause issues with the Wav Trigger. Use `sox` to strip metadata and ensure clean 16-bit, 44.1kHz stereo WAV files:
+
 ```bash
+# Install sox if needed
+brew install sox
+
 # Convert and strip metadata from all WAV files in current directory
 mkdir -p fixed
 for file in *.wav; do
-  ffmpeg -i "$file" -acodec pcm_s16le -ar 44100 -ac 2 -map_metadata -1 "fixed/$file"
+  sox "$file" -b 16 -c 2 -r 44100 "fixed/$file"
 done
 ```
 
