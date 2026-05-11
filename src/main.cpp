@@ -5,6 +5,9 @@
 
 RTC_DS3231 rtc;
 
+const int ACTIVE_HOUR_START = 10;
+const int ACTIVE_HOUR_END = 23;
+
 // Button pins - each adjacent to a GND pin
 const int BUTTON_PINS[] = {2, 6, 10, 13, 17, 21};
 const int NUM_BUTTONS = 6;
@@ -46,6 +49,12 @@ void handleAttractMode();
 void exitAttractMode();
 void refillTrackPool();
 int drawRandomTrack();
+
+bool isActiveHours() {
+    DateTime now = rtc.now();
+    int hour = now.hour();
+    return hour >= ACTIVE_HOUR_START && hour < ACTIVE_HOUR_END;
+}
 
 void setup() {
   Serial.begin(115200);
@@ -97,6 +106,11 @@ void setup() {
 }
 
 void loop() {
+
+  if (!isActiveHours()) {
+    return;
+  }
+
   bool buttonPressed = false;
   
   // Check all buttons
@@ -136,6 +150,7 @@ void loop() {
           Serial.print(" | RTC time: ");
           Serial.print(now.hour());
           Serial.print(":");
+          if (now.minute() < 10) Serial.print("0");
           Serial.println(now.minute());
           
           // Check if this track is already playing
