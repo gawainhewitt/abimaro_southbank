@@ -12,6 +12,11 @@ const int ACTIVE_HOUR_END = 23;
 const int BUTTON_PINS[] = {2, 6, 10, 13, 17, 21};
 const int NUM_BUTTONS = 6;
 
+// Mode switch
+const int MODE_SWITCH_PIN = 26;  
+bool testMode = false;
+bool lastModeSwitchState = HIGH;
+
 // Track mapping
 const int TRACK_MAP[] = {1, 2, 3, 4, 5, 6};
 
@@ -49,6 +54,7 @@ void handleAttractMode();
 void exitAttractMode();
 void refillTrackPool();
 int drawRandomTrack();
+void checkModeSwitch();
 
 bool isActiveHours() {
     DateTime now = rtc.now();
@@ -88,6 +94,13 @@ void setup() {
     Serial.print(" on GP");
     Serial.println(BUTTON_PINS[i]);
   }
+
+  // Setup mode switch with internal pull-up
+  pinMode(MODE_SWITCH_PIN, INPUT_PULLUP);
+  lastModeSwitchState = digitalRead(MODE_SWITCH_PIN);
+  testMode = (lastModeSwitchState == LOW);  // LOW = test mode, HIGH = performance mode
+  Serial.print("Starting in ");
+  Serial.println(testMode ? "TEST MODE" : "PERFORMANCE MODE");
   
   Serial.println("Starting Wav Trigger serial...");
   WavSerial.begin(57600);
@@ -98,7 +111,7 @@ void setup() {
   delay(100);
   
   // Initialize random seed
-  randomSeed(analogRead(26));  // Use floating ADC pin for randomness
+  randomSeed(analogRead(27));  // Use floating ADC pin for randomness
   
   lastButtonPressTime = millis();
   
@@ -107,7 +120,11 @@ void setup() {
 
 void loop() {
 
-  if (!isActiveHours()) {
+   // Check mode switch
+  checkModeSwitch();
+  
+  // Only enforce time restrictions in performance mode
+  if (!testMode && !isActiveHours()) {
     return;
   }
 
@@ -347,4 +364,30 @@ void setMasterVolume(int gain) {
   WavSerial.write((byte)gain);     // Gain low byte
   WavSerial.write((byte)(gain >> 8)); // Gain high byte
   WavSerial.write(0x55);           // EOM
+}
+
+void checkModeSwitch() {
+  int reading = digitalRead(MODE_SWITCH_PIN);
+  
+  // Check for state change
+  if (reading != lastModeSwitchState) {
+    delay(50);  // Simple debounce
+    reading = digitalRead(MODE_SWITCH_PIN);
+    
+    if (reading != lastModeSwitchState) {
+      lastModeSwitchState = reading;
+      
+      if (reading == LOW) {
+        // Switched to TEST MODE
+        testMode = true;
+        Serial.println("=== SWITCHED TO TEST MODE ===");
+        triggerTrack(8);
+      } else {
+        // Switched to PERFORMANCE MODE
+        testMode = false;
+        Serial.println("=== SWITCHED TO PERFORMANCE MODE ===");
+        triggerTrack(7);
+      }
+    }
+  }
 }
